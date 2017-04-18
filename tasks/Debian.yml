@@ -20,37 +20,14 @@
     - init
     - config
 
-- name: "Debian | Installing repository Debian"
-  apt_repository: repo="deb http://repo.zabbix.com/zabbix/{{ zabbix_version }}/debian/ {{ ansible_distribution_release }} main"
-                  state=present
-  when: ansible_distribution == "Debian" and zabbix_repo == "zabbix"
-  tags:
-    - zabbix-server
-    - init
-    - config
-
-- name: "Debian | Installing repository Debian"
-  apt_repository: repo="deb-src http://repo.zabbix.com/zabbix/{{ zabbix_version }}/debian/ {{ ansible_distribution_release }} main"
-                  state=present
-  when: ansible_distribution == "Debian" and zabbix_repo == "zabbix"
-  tags:
-    - zabbix-server
-    - init
-    - config
-
-- name: "Debian | Installing repository Ubuntu"
-  apt_repository: repo="deb http://repo.zabbix.com/zabbix/{{ zabbix_version }}/ubuntu/ {{ ansible_distribution_release }} main"
-                  state=present
-  when: ansible_distribution == "Ubuntu" and zabbix_repo == "zabbix"
-  tags:
-    - zabbix-server
-    - init
-    - config
-
-- name: "Debian | Installing repository Ubuntu"
-  apt_repository: repo="deb-src http://repo.zabbix.com/zabbix/{{ zabbix_version }}/ubuntu/ {{ ansible_distribution_release }} main"
-                  state=present
-  when: ansible_distribution == "Ubuntu" and zabbix_repo == "zabbix"
+- name: "Debian | Installing repository {{ ansible_distribution }}"
+  apt_repository:
+    repo: "{{ item }} http://repo.zabbix.com/zabbix/{{ zabbix_version }}/{{ ansible_distribution.lower() }}/ {{ ansible_distribution_release }} main"
+    state: present
+  when: zabbix_repo == "zabbix"
+  with_items:
+    - deb-src
+    - deb
   tags:
     - zabbix-server
     - init
@@ -78,6 +55,20 @@
        state=present
        update_cache=yes
        cache_valid_time=3600
+  when: ansible_distribution != 'Ubuntu' and
+        {{ ansible_distribution_version | version_compare('16.04', '<') }}
+  tags:
+    - zabbix-server
+    - init
+
+- name: "Ubuntu | Install php7-{{ database_type }}"
+  apt: pkg={{ item }}
+       state=present
+       update_cache=yes
+       cache_valid_time=3600
+  with_items: "{{ ubuntu_packages }}"
+  when: ansible_distribution == 'Ubuntu' and
+        {{ ansible_distribution_version | version_compare('16.04', '>=') }}
   tags:
     - zabbix-server
     - init
@@ -95,10 +86,24 @@
 
 - name: "Debian | install apache vhost"
   template: src=apache_vhost.conf.j2
-            dest=/etc/apache2/sites-enabled/zabbix.conf
+            dest=/etc/apache2/sites-available/zabbix.conf
             owner=root
             group=root
             mode=0644
+  when: zabbix_vhost and zabbix_web
+  notify: restart apache
+  tags:
+    - zabbix-server
+    - init
+    - config
+    - apache
+
+- name: "Debian | enable apache vhost"
+  file: src=/etc/apache2/sites-available/zabbix.conf
+        dest=/etc/apache2/sites-enabled/zabbix.conf
+        owner=root
+        group=root
+        state=link
   when: zabbix_vhost and zabbix_web
   notify: restart apache
   tags:
@@ -140,7 +145,7 @@
     - database
 
 - name: "Debian | Install PostgreSQL Client package"
-  apt: name=postgresql
+  apt: name=postgresql-client
        state=present
   when: database_type == 'pgsql'
   tags:
